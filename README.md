@@ -10,11 +10,11 @@ $ pip install sdstate
 
 ## Usage
 
-- TODO
-
-## Contributing
-
-Interested in contributing? Check out the contributing guidelines. Please note that this project is released with a Code of Conduct. By contributing to this project, you agree to abide by its terms.
+- Memory efficient implementation of Slater-Derterminant states.
+- Compute expectation value of Hamiltonian on Slater-Determinant states states.
+- Compute Hartree-Fock energy estimation of a Hamiltonian.
+- Efficient estimation of ground state energy and spectrum range of Hamiltonian.
+- Compactable with Hamiltonian represented by openfermion.FermionOperator and a tuple of 1-electron and 2-electron tensor.
 
 ## License
 
