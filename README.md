@@ -18,7 +18,7 @@ Interested in contributing? Check out the contributing guidelines. Please note t
 
 ## License
 
-`sdstate` was created by Linjun Wang. It is licensed under the terms of the MIT license.
+`sdstate` was created by Linjun Wang <linjun.wang@mail.utoronto.ca>. It is licensed under the terms of the MIT license.
 
 ## Credits
 
