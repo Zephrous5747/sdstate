@@ -5,7 +5,7 @@ Implementation of Slater Determinant states as dictionaries of states and coeffi
 ## Installation
 
 ```bash
-$ pip install sdstate
+$ pip install module_sdstate
 ```
 
 ## Usage

@@ -5,7 +5,7 @@ from scipy.linalg import eigh_tridiagonal
 from multiprocessing import Pool
 import openfermion as of
 import os
-from sdstate import *
+from module_sdstate.sdstate_utils import sdstate
 
 def HF_energy(Hf, n, ne):
     """Find the energy of largest and smallest slater determinant states with Hf as Fermionic Hamiltonian and

@@ -139,11 +139,11 @@ class sdstate:
         if len(tbt.shape) == 4:
             for p, q, r, s in product(range(n), repeat = 4):
                 if tbt[p, q, r, s] != 0:
-                    re_state += tbt[p, q, r, s] * sdstate.Epqrs(self, self.n_qubit - 1 - p, self.n_qubit - 1 -q, self.n_qubit - 1 - r, self.n_qubit - 1 -s)
+                    re_state += tbt[p, q, r, s] * self.Epqrs(self.n_qubit - 1 - p, self.n_qubit - 1 -q, self.n_qubit - 1 - r, self.n_qubit - 1 -s)
         elif len(tbt.shape) == 2:
             for p, q in product(range(n), repeat = 2):
                 if tbt[p,q] != 0:
-                    re_state += tbt[p, q] * sdstate.Epq(self, self.n_qubit - 1 - p, self.n_qubit - 1 - q)
+                    re_state += tbt[p, q] * self.Epq(self.n_qubit - 1 - p, self.n_qubit - 1 - q)
         return re_state
         
     def concatenate(self, st):
