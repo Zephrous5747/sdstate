@@ -146,7 +146,7 @@ def lanczos_total_range(Hf, steps = 2, states = [], e_nums = [], multiprocessing
             elif len(e_nums) != 0:
                 res = pool.starmap(lanczos_range, [(Hf, steps, None, ne) for ne in e_nums])
             else:
-                res = pool.starmap(lanczos_range, [(Hf, steps, None, ne) for ne in range(n)])
+                res = pool.starmap(lanczos_range, [(Hf, steps, None, ne) for ne in range(n+1)])
         E_max = max([i[0] for i in res])
         E_min = min([i[1] for i in res])
     else:
@@ -159,7 +159,7 @@ def lanczos_total_range(Hf, steps = 2, states = [], e_nums = [], multiprocessing
                 E_max = max(max(eigs), E_max)
                 E_min = min(min(eigs), E_min)
         else:
-            for ne in range(n):
+            for ne in range(n+1):
                 states, A, B = lanczos(Hf, steps = steps, ne = ne)
                 eigs, _ = eigh_tridiagonal(A,B)
                 E_max = max(max(eigs), E_max)
