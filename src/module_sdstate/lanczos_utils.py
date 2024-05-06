@@ -19,12 +19,11 @@ def HF_energy(Hf, n, ne):
     E_high = hstate.exp(Hf)
     return E_high, E_low
 
-def HF_spectrum_range(Hf, multiprocessing = True):
+def HF_spectrum_range(Hf, n, multiprocessing = True):
     """Compute the naive Hartree-Fock energy range of the Hamiltonian 2e tensor Hf for all number of electrons.
     Multiprocessing parameter is set to parallelize computations for the states with different number of electrons. 
     Warning: This is not the actual Hartree-Fock energy range, which takes exponential time to compute
     """
-    n = of.utils.count_qubits(Hf)
     if multiprocessing:
         num_processes = os.cpu_count()
         with Pool(processes=num_processes) as pool:
