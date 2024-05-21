@@ -44,7 +44,7 @@ class sdstate:
         self.eps = eps
         if n_qubit:
             self.n_qubit = n_qubit
-        if s:
+        if isinstance(s, int):
             self.dic[s] = coeff
             if not self.n_qubit:
                 self.n_qubit = len(str(bin(s)))- 2
@@ -197,7 +197,7 @@ class sdstate:
                 partial_state += self.op_state(t, coeff)
         return partial_state
     
-    def Hf_state(self, Hf: of.FermionOperator, multiprocessing = False):
+    def Hf_state(self, H: of.FermionOperator, multiprocessing = False):
         """Apply a Hamiltonian in FermionOperator on the current state. multiprocessing can be used
         to parallelize the process of applying each Excitation operator in the Hamiltonian. The general
         cost is given by O(N^4M), for N as the qubit dimension and M as the size of the current state.
