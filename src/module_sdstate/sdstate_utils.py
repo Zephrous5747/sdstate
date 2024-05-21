@@ -159,7 +159,11 @@ class sdstate:
             for s2 in st.dic:
                 tmp += sdstate(s = s1 << n2 | s2, coeff = self.dic[s1] * st.dic[s2], n_qubit = n)
         return tmp
-                
+    
+    def truncate(self, n):
+#         Truncate the state, leaving only the n states of leading coefficients
+        self.dic = dict(sorted(self.dic.items(), key=lambda item: abs(item[1]), reverse=True)[:n])
+    
     def Epq(self, p, q):
         """
         Return the action of a_p^a_q on the current state.
@@ -198,7 +202,6 @@ class sdstate:
         to parallelize the process of applying each Excitation operator in the Hamiltonian. The general
         cost is given by O(N^4M), for N as the qubit dimension and M as the size of the current state.
         """
-        H = of.transforms.chemist_ordered(Hf)
         re_state = sdstate(n_qubit = self.n_qubit)
         if multiprocessing:
             # Convert FermionOperator terms to a list of tuples for easy batch processing
