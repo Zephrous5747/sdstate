@@ -33,7 +33,7 @@ def parallel_reduce_partial(results):
         return parallel_reduce_partial(reduced_pairs)
     
 def int_to_str(k, n_qubits):
-    return str(bin(k))[2:][::-1] + "0" * (n_qubits - k.bit_length())
+    return str(bin(k))[2:][::-1] + "0" * (n_qubits - k.bit_length() - (k == 0))
 
 class sdstate:
     eps = 1e-8
@@ -237,11 +237,64 @@ class sdstate:
         return sdstate(n_qubit = self.n_qubit)
     
     def to_vec(self):
+        """
+        Convert to np.ndarray or scipy.sparse
+        """
         vec = np.zeros(2 ** self.n_qubit)
         for i in self.dic:
             vec[i] = self.dic[i]
         return vec
+
+    def get_1RDM(self):
+        """
+        Return the 1 electron reduced density matrix P, where
+        [P]_pq = <sd|a_p*a_q|sd>
+        """
+        density = np.ndarray((self.n_qubit,self.n_qubit))
+        for p, q in product(range(self.n_qubit), repeat = 2):
+            density[p,q] = self @ (self.Epq(p, q))
+        return density
+
+    def variance(self, op: of.FermionOperator):
+        """
+        Return the variance of the operator on the current state.
+        Var_O(sd) = <sd|O^2|sd> - <sd|O|sd>^2
+        """
+        if isinstance(op, of.FermionOperator):
+            return self @ self.Hf_state(op).Hf_state(op) - self.exp(op) ** 2
+        elif isinstance(op, np.ndarray):
+            return self @ self.tensor_state(op).tensor_state(op) - self.exp(op) ** 2
+        else:
+            print("Invalid input type")
+            return -1
     
+    def var_num(self):
+        """
+        Return the variance of the total variance on the current state.
+        Var_num = \sum_i(var_{n_i}(sd))
+        """
+        variance = 0
+        for p in range(self.n_qubit):
+            n_op = of.FermionOperator(f"{p}^ {p}", 1)
+            variance += self.variance(n_op)
+        return variance
+
+    def unitary_var_num(self, U):
+        """
+        Return the variance of number operators after acting Mean Field Unitaries on the state:
+        unitary_var_num = \sum_i(var_{n_i}(U|sd>)) = \sum_i(var_{Un_iU*}(sd))
+        """
+        variance = 0
+        n = self.n_qubit
+        for p in range(n):
+            n_op = np.zeros((n, n))
+            n_op[p,p] = 1
+            # Acting the unitary on the number operator
+            u_n_op = np.einsum('ak,bl,kl->ab', U, np.conj(U), n_op)
+            variance += self.variance(u_n_op)
+        return variance
+
+
 def parity_pq(number: int, a, b):
     """Count the number of electrons between p and q bits (p+1, p+2, ... ,q-1), 
     return a binary number representing the parity of the substring in the binary representation of number
