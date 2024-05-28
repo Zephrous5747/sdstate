@@ -1,6 +1,6 @@
 """Defines an implementation of the Slater Determinant states,with a dictionary to represent the occupied states with the corresponding constants.
 """
-# Defines an implementation of the Slater Determinant states,with a dictionary to represent the occupied states with the corresponding constants.
+import math
 import numpy as np
 from itertools import product
 import copy
@@ -252,7 +252,7 @@ class sdstate:
         """
         density = np.ndarray((self.n_qubit,self.n_qubit))
         for p, q in product(range(self.n_qubit), repeat = 2):
-            density[p,q] = self @ (self.Epq(p, q))
+            density[p,q] = self @ (self.Epq(self.n_qubit - 1 - p, self.n_qubit - 1 - q))
         return density
 
     def variance(self, op: of.FermionOperator):
@@ -268,21 +268,23 @@ class sdstate:
             print("Invalid input type")
             return -1
     
-    def var_num(self):
-        """
-        Return the variance of the total variance on the current state.
-        Var_num = \sum_i(var_{n_i}(sd))
-        """
-        variance = 0
-        for p in range(self.n_qubit):
-            n_op = of.FermionOperator(f"{p}^ {p}", 1)
-            variance += self.variance(n_op)
-        return variance
+    # Replaced by get_var_num
+    # def var_num(self):
+    #     """
+    #     Return the sum of the variance of number opertors on the current state.
+    #     Var_num = \sum_i(var_{n_i}(sd))
+    #     """
+    #     variance = 0
+    #     for p in range(self.n_qubit):
+    #         n_op = of.FermionOperator(f"{p}^ {p}", 1)
+    #         variance += self.variance(n_op)
+    #     return variance
 
-    def unitary_var_num(self, U):
+    def get_var_num(self, U = None):
         """
         Return the variance of number operators after acting Mean Field Unitaries on the state:
-        unitary_var_num = \sum_i(var_{n_i}(U|sd>)) = \sum_i(var_{Un_iU*}(sd))
+        unitary_var_num = \sum_i(var_{n_i}(U|sd>)) = \sum_i(var_{Un_iU*}(sd)) if U is defined,
+        otherwise U = Identity
         """
         variance = 0
         n = self.n_qubit
@@ -290,9 +292,39 @@ class sdstate:
             n_op = np.zeros((n, n))
             n_op[p,p] = 1
             # Acting the unitary on the number operator
-            u_n_op = np.einsum('ak,bl,kl->ab', U, np.conj(U), n_op)
-            variance += self.variance(u_n_op)
+            if U is not None:
+                n_op = np.einsum('ak,bl,kl->ab', np.conj(U), U, n_op)
+            variance += self.variance(n_op)
         return variance
+
+    def get_entropy_linear(self, U = None):
+        """
+        Return the linear entropy of number operators after acting Mean Field Unitaries on the state:
+        S = - \sum_k{n_k * log_2(n_k)}, 
+        n_k = U @ n_k @ U*, U is set to identity by default.
+        """
+        S = 0
+        for p in range(self.n_qubit):
+            n_op = np.zeros((self.n_qubit, self.n_qubit))
+            n_op[p,p] = 1
+            if U is not None:
+                # Acting the unitary on the number operator
+                n_op = np.einsum('ak,bl,kl->ab', np.conj(U), U, n_op)
+            exp_n = self.exp(n_op)
+            S -= exp_n * math.log2(exp_n)
+        return S
+
+    def get_entropy(self):
+        """
+        Return the Shannon entropy of the current state
+        S = - \sum_k{c_k * log_2(c_k)}, 
+        For the current state as |Psi> = \sum_k{c_k|SD_k>}
+        """
+        S = 0
+        for _, (state, coeff) in enumerate(self.dic.items()):
+            ck = np.conj(coeff) * coeff
+            S -= ck * math.log2(ck)
+        return S
 
 
 def parity_pq(number: int, a, b):
