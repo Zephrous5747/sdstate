@@ -1,4 +1,6 @@
-"""Defines an implementation of the Slater Determinant states,with a dictionary to represent the occupied states with the corresponding constants.
+"""Defines an implementation of the Slater Determinant states, with a dictionary to 
+represent the occupied states with the corresponding constants. Currently encorporating 
+with 1e and 2e tensor, and Hamiltoniana in FermionOperator in chemist notation.
 """
 import math
 import numpy as np
@@ -33,7 +35,7 @@ def parallel_reduce_partial(results):
         return parallel_reduce_partial(reduced_pairs)
     
 def int_to_str(k, n_qubits):
-    return str(bin(k))[2:][::-1] + "0" * (n_qubits - k.bit_length() - (k == 0))
+    return "0" * (n_qubits - k.bit_length() - (k == 0)) + str(bin(k))[2:]
 
 class sdstate:
     eps = 1e-8
@@ -139,11 +141,11 @@ class sdstate:
         if len(tbt.shape) == 4:
             for p, q, r, s in product(range(n), repeat = 4):
                 if tbt[p, q, r, s] != 0:
-                    re_state += tbt[p, q, r, s] * self.Epqrs(self.n_qubit - 1 - p, self.n_qubit - 1 -q, self.n_qubit - 1 - r, self.n_qubit - 1 -s)
+                    re_state += tbt[p, q, r, s] * self.Epqrs(p,q,r,s)
         elif len(tbt.shape) == 2:
             for p, q in product(range(n), repeat = 2):
                 if tbt[p,q] != 0:
-                    re_state += tbt[p, q] * self.Epq(self.n_qubit - 1 - p, self.n_qubit - 1 - q)
+                    re_state += tbt[p, q] * self.Epq(p,q)
         return re_state
         
     def concatenate(self, st):
@@ -228,10 +230,10 @@ class sdstate:
     def op_state(self, t, coef):
         if coef != 0:
             if len(t) == 4:
-                return coef * self.Epqrs(self.n_qubit - 1 - t[0][0], self.n_qubit - 1 - t[1][0],
-                                         self.n_qubit - 1 - t[2][0], self.n_qubit - 1 - t[3][0])
+                return coef * self.Epqrs(t[0][0], t[1][0],
+                                         t[2][0], t[3][0])
             elif len(t) == 2:
-                return coef * self.Epq(self.n_qubit - 1 - t[0][0], self.n_qubit - 1 - t[1][0])
+                return coef * self.Epq(t[0][0], t[1][0])
             elif len(t) == 0:
                 return coef * self
         return sdstate(n_qubit = self.n_qubit)
@@ -240,9 +242,10 @@ class sdstate:
         """
         Convert to np.ndarray or scipy.sparse
         """
+        # dim = 2 ** self.n_qubit
         vec = np.zeros(2 ** self.n_qubit)
         for i in self.dic:
-            vec[i] = self.dic[i]
+            vec[reverse_bits(i, self.n_qubit)] = self.dic[i]
         return vec
 
     def get_1RDM(self):
@@ -252,7 +255,7 @@ class sdstate:
         """
         density = np.ndarray((self.n_qubit,self.n_qubit))
         for p, q in product(range(self.n_qubit), repeat = 2):
-            density[p,q] = self @ (self.Epq(self.n_qubit - 1 - p, self.n_qubit - 1 - q))
+            density[p,q] = self @ (self.Epq(p, q))
         return density
 
     def variance(self, op: of.FermionOperator):
@@ -321,10 +324,33 @@ class sdstate:
         For the current state as |Psi> = \sum_k{c_k|SD_k>}
         """
         S = 0
-        for _, (state, coeff) in enumerate(self.dic.items()):
+        for state, coeff in self.dic.items():
             ck = np.conj(coeff) * coeff
             S -= ck * math.log2(ck)
         return S
+
+    # def CR(self, idx, coeff):
+    #     """Acting creation operator a_p* on the current state"""
+    #     if self.dic == {}:
+    #         self.n_qubit = max(self.n_qubit, idx)
+    #         self.dic[1 << idx] = coeff
+    #     else:
+    #         tmp = {}
+    #         for state, coeff in self.dic.items():
+    #             if not state & (1 << idx):
+
+    #         self.dic = tmp
+
+
+def reverse_bits(number, num_bits):
+    # Determine the number of bits in the original number
+    reversed_num = 0
+    for i in range(num_bits):
+        # Shift reversed_num to the left to make room for the next bit
+        reversed_num <<= 1
+        # Add the rightmost bit of the number to reversed_num
+        reversed_num |= (number >> i) & 1
+    return reversed_num
 
 
 def parity_pq(number: int, a, b):
@@ -339,7 +365,7 @@ def parity_pq(number: int, a, b):
     mask = ((1 << q) - 1)
 
     # Apply the mask to truncate the first q bits, and drop the last p bits.
-    result = (number & mask ) >> (p + 1)
+    result = (number & mask) >> (p + 1)
     # Compute the parity
     parity = 0
     while result:
