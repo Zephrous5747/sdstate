@@ -6,7 +6,6 @@ import math
 import numpy as np
 from itertools import product
 import copy
-from scipy.linalg import eigh_tridiagonal
 from multiprocessing import Pool
 import openfermion as of
 import os
@@ -35,13 +34,13 @@ def parallel_reduce_partial(results):
         return parallel_reduce_partial(reduced_pairs)
     
 def int_to_str(k, n_qubits):
-    return "0" * (n_qubits - k.bit_length() - (k == 0)) + str(bin(k))[2:]
+    return str(bin(k))[2:][::-1] + "0" * (n_qubits - k.bit_length() - (k == 0)) 
 
 class sdstate:
     eps = 1e-8
     dic = {}
     n_qubit = 0
-    def __init__(self, s = None, coeff = 1, n_qubit = 0, eps = 1e-8):
+    def __init__(self, s = None, coeff = 1, n_qubit = 0, dic = None, eps = 1e-8):
         self.dic = {}
         self.eps = eps
         if n_qubit:
@@ -49,7 +48,14 @@ class sdstate:
         if isinstance(s, int):
             self.dic[s] = coeff
             if not self.n_qubit:
-                self.n_qubit = len(str(bin(s)))- 2
+                self.n_qubit = len(str(bin(s))) - 2
+        if isinstance(dic, dict):
+            self.dic = dic
+            if not self.n_qubit:
+                n = 0
+                for s in self.dic:
+                    n = max(n, len(str(bin(s))) - 2)
+                self.n_qubit = n
             
     def norm(self):
 #         Return the norm of the current state
@@ -270,18 +276,6 @@ class sdstate:
         else:
             print("Invalid input type")
             return -1
-    
-    # Replaced by get_var_num
-    # def var_num(self):
-    #     """
-    #     Return the sum of the variance of number opertors on the current state.
-    #     Var_num = \sum_i(var_{n_i}(sd))
-    #     """
-    #     variance = 0
-    #     for p in range(self.n_qubit):
-    #         n_op = of.FermionOperator(f"{p}^ {p}", 1)
-    #         variance += self.variance(n_op)
-    #     return variance
 
     def get_var_num(self, U = None):
         """
@@ -329,21 +323,78 @@ class sdstate:
             S -= ck * math.log2(ck)
         return S
 
-    # def CR(self, idx, coeff):
-    #     """Acting creation operator a_p* on the current state"""
-    #     if self.dic == {}:
-    #         self.n_qubit = max(self.n_qubit, idx)
-    #         self.dic[1 << idx] = coeff
-    #     else:
-    #         tmp = {}
-    #         for state, coeff in self.dic.items():
-    #             if not state & (1 << idx):
+    def get_creation_operators(self):
+        """Return the creation operator which creates the current state.
+        """
+        op = of.FermionOperator.zero()
+        for s, coeff in self.dic.items():
+            # Insert a_p* for p in decreasing order to avoid sign changes
+            bits = find_1_bits(s)[::-1]
+            tup = tuple((i, 1) for i in bits)
+            op += of.FermionOperator(tup, coeff)
+        return op
 
-    #         self.dic = tmp
+    # def create(self, vec):
+    #     """Acting a sum of creation operators on the current state, for vec[i] = v_i
+    #     \sum_p v_p * a_p *
+    #     """
 
+    def CR(self, idx, coeff = 1):
+        """Acting creation operator a_p* on the current state, return the resulting state"""
+        if self.dic == {}:
+            n_qubit = max(self.n_qubit, idx)
+            dic = {}
+            dic[1 << idx] = coeff
+            return sdstate(n_qubit = n_qubit, dic = dic)
+        else:
+            tmp = {}
+            n_qubit = max(self.n_qubit, idx)
+            for state, coeff in self.dic.items():
+                if not state & (1 << idx):
+                    # Create electron in orbital idx
+                    cr_state = state ^ (1 << idx)
+                    # Count number of electrons before index idx
+                    p = parity(state >> (idx + 1))
+                    tmp[cr_state] = coeff * ((-1) ** p)
+            return sdstate(n_qubit = n_qubit, dic = tmp)
 
-def reverse_bits(number, num_bits):
-    # Determine the number of bits in the original number
+            
+def create_sdstate(CR: of.FermionOperator, n_qubit = None):
+    """Return the state created from a linear combination of creation operators strings.
+    |SD> = \sum_iP{CR_i}|vacuum>
+    CR_i = \PI_p{a_p*}
+    """
+    if not n_qubit:
+        n_qubit = of.count_qubits(CR)
+    sd = sdstate(n_qubit = n_qubit)
+    for tup, val in CR.terms.items():
+        tmp = sdstate(n_qubit = n_qubit)
+        lis_idx = [i[0] for i in tup]
+        lis_op = [i[1] for i in tup]
+        assert not 0 in lis_op, "CR consists of annihilation operator: " + str(of.FermionOperator(tup, val))
+        # Act the operators on vacuum in reverse order
+        for idx in lis_idx[::-1]:
+            tmp = tmp.CR(idx, 1)
+        sd += val * tmp
+    return sd
+
+def find_1_bits(n: int) -> int:
+    """Return the list of indices of 1 in the binary representation of n, in increasing order
+    """
+    index = 0
+    indices = []
+    while n > 0:
+        # Check if the lowest bit is 1
+        if n & 1:
+            indices.append(index)
+        # Right shift n by 1 to check the next bit
+        n >>= 1
+        index += 1
+    return indices
+
+def reverse_bits(number: int, num_bits: int) -> int:
+    """Reverse the binary bits of number given total number of bits is num_bits.
+    """
     reversed_num = 0
     for i in range(num_bits):
         # Shift reversed_num to the left to make room for the next bit
@@ -353,7 +404,7 @@ def reverse_bits(number, num_bits):
     return reversed_num
 
 
-def parity_pq(number: int, a, b):
+def parity_pq(number: int, a: int, b: int):
     """Count the number of electrons between p and q bits (p+1, p+2, ... ,q-1), 
     return a binary number representing the parity of the substring in the binary representation of number
     """
@@ -366,14 +417,17 @@ def parity_pq(number: int, a, b):
 
     # Apply the mask to truncate the first q bits, and drop the last p bits.
     result = (number & mask) >> (p + 1)
-    # Compute the parity
+    return parity(result)
+
+def parity(num: int):
+    """Return the parity of bits in a given binary number"""
     parity = 0
-    while result:
+    while num:
         parity ^= 1
-        result &= result - 1  # Drops the lowest set bit
+        num &= num - 1  # Drops the lowest set bit
     return parity
 
-def actable_pq(n, p, q):
+def actable_pq(n: int, p: int, q: int):
     """
     Determines if a_p^a_q annihilates the current state given by n, for n as an index in fock space
     """
