@@ -33,9 +33,6 @@ def parallel_reduce_partial(results):
         # Further reduce if necessary
         return parallel_reduce_partial(reduced_pairs)
     
-def int_to_str(k, n_qubits):
-    return str(bin(k))[2:][::-1] + "0" * (n_qubits - k.bit_length() - (k == 0)) 
-
 class sdstate:
     eps = 1e-8
     dic = {}
@@ -74,7 +71,9 @@ class sdstate:
             self.dic[i] /= n
         return None
     
-    
+    def __eq__ (self, other):
+        return self.dic == other.dic and self.n_qubit == other.n_qubit
+
     def __add__(self, other):
         # Create a new instance with the updated number of qubits
         result = sdstate(n_qubit=max(self.n_qubit, other.n_qubit))
@@ -99,7 +98,7 @@ class sdstate:
     
     def __mul__(self, n):
 #         Defines constant multiplication
-        result = copy.deepcopy(self)
+        result = copy.copy(self)
         for s in result.dic:
             result.dic[s] *= n
         return result
@@ -308,7 +307,8 @@ class sdstate:
                 # Acting the unitary on the number operator
                 n_op = np.einsum('ak,bl,kl->ab', np.conj(U), U, n_op)
             exp_n = self.exp(n_op)
-            S -= exp_n * math.log2(exp_n)
+            if abs(exp_n) > self.eps:
+                S -= exp_n * math.log2(exp_n)
         return S
 
     def get_entropy(self):
@@ -320,7 +320,8 @@ class sdstate:
         S = 0
         for state, coeff in self.dic.items():
             ck = np.conj(coeff) * coeff
-            S -= ck * math.log2(ck)
+            if abs(ck) > self.eps:
+                S -= ck * math.log2(ck)
         return S
 
     def get_creation_operators(self):
@@ -358,6 +359,50 @@ class sdstate:
                     tmp[cr_state] = coeff * ((-1) ** p)
             return sdstate(n_qubit = n_qubit, dic = tmp)
 
+    def MF_unitary(self, U):
+        """Acting a Mean Field Unitary on the current state
+        """
+        # Getting the creation operators which creates the current state
+        op = self.get_creation_operators()
+        # Acting unitary on the operators
+        U_op = of.normal_ordered(transform_CR(op, U))
+        # Generated the state from Unitarily transformed operators
+        return create_sdstate(U_op, n_qubit = self.n_qubit)
+
+
+def transform_CR(op: of.FermionOperator, U: np.ndarray):
+    """Transform with creation operator the MF unitary rotation U
+    U @ CR
+    CR = \PI_p{a_p*}
+    """
+    n = U.shape[0]
+    op_U = of.FermionOperator.zero()
+    for tup, val in op.terms.items():
+        cur_op = of.FermionOperator.identity()
+        lis = [i[0] for i in tup]
+        assert not 0 in [i[1] for i in tup], "CR consists of annihilation operator: " + str(of.FermionOperator(tup, val))
+        for i in lis:
+            tmp = np.zeros(n)
+            tmp[i] = 1
+#             print(tmp)
+            u_tmp = np.einsum('q,qp->p', tmp, U)
+#             print(u_tmp)
+            tmp_op = vec_to_CR(u_tmp)
+#             Multiply the transfered operator to the current operator to add cur_op
+            cur_op *= tmp_op
+#         Update the current operator
+        op_U += cur_op *val
+    return op_U
+   
+def vec_to_CR(vec) -> of.FermionOperator:
+    """Given a vectorized representation of creation operator, return the linear combination
+    of creation operator
+    """
+    op = of.FermionOperator.zero()
+    for i in range(len(vec)):
+        if vec[i] != 0:
+            op += of.FermionOperator(f"{i}^", vec[i])
+    return op
             
 def create_sdstate(CR: of.FermionOperator, n_qubit = None):
     """Return the state created from a linear combination of creation operators strings.
@@ -368,6 +413,9 @@ def create_sdstate(CR: of.FermionOperator, n_qubit = None):
         n_qubit = of.count_qubits(CR)
     sd = sdstate(n_qubit = n_qubit)
     for tup, val in CR.terms.items():
+        if tup == ():
+            sd.dic[0] = val
+            continue
         tmp = sdstate(n_qubit = n_qubit)
         lis_idx = [i[0] for i in tup]
         lis_op = [i[1] for i in tup]
@@ -391,6 +439,9 @@ def find_1_bits(n: int) -> int:
         n >>= 1
         index += 1
     return indices
+
+def int_to_str(k, n_qubit):
+    return str(bin(k))[2:][::-1] + "0" * (n_qubit - k.bit_length() - (k == 0)) 
 
 def reverse_bits(number: int, num_bits: int) -> int:
     """Reverse the binary bits of number given total number of bits is num_bits.

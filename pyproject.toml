@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "module_sdstate"
-version = "0.1.2"
+version = "0.1.6"
 description = "Implementation of Slater Determinant states as dictionaries of states and coefficient pairs. Each state is represented with an integar treated as binary, allowing applying of Excitation operators on the state efficiently. Memory-efficient implementation of Lanczos iteration for estimating Hamiltonian spectrum range."
 authors = ["Linjun Wang"]
 license = "MIT"
