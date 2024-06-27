@@ -59,8 +59,8 @@ class sdstate:
         return np.sqrt(self @ self)
 
     def remove_zeros(self):
-#         Remove zeros in the state
-        self.dic = {k: coeff for k, coeff in self.dic.items() if coeff != 0}
+#         Remove zeros in the state, removing states smaller than self.eps
+        self.dic = {k: coeff for k, coeff in self.dic.items() if np.linalg.norm(coeff) > self.eps}
         return None
     
     def normalize(self):
@@ -97,7 +97,7 @@ class sdstate:
         return result
     
     def __mul__(self, n):
-#         Defines constant multiplication
+        # Defines constant multiplication
         result = copy.copy(self)
         for s in result.dic:
             result.dic[s] *= n
@@ -106,7 +106,7 @@ class sdstate:
     def __rmul__(self, n):
         return self.__mul__(n)
     
-    def __truediv__(self, n: int):
+    def __truediv__(self, n: float):
         return self.__mul__(1/n)
     
     def __matmul__(self, other):
@@ -114,17 +114,23 @@ class sdstate:
             return self.Hf_state(other)
         if self.n_qubit == 0 or other.n_qubit == 0:
             return 0
-        count = 0
-#         assert self.n_qubit == other.n_qubit, "qubit number mismatch"
-        lis = list(set(list(self.dic.keys())) & set(list(other.dic.keys())))
-        for s in lis:
-            count += np.conjugate(self.dic[s]) * other.dic[s]
-        return count 
+        return self.inner(other) 
     
     def __str__(self):
         self.remove_zeros()
         return str({int_to_str(k, self.n_qubit): self.dic[k] for k in self.dic})
     
+    def inner(self, other):
+        """
+        Defines the inner product of the current state with another state
+        """
+        count = 0
+        lis = list(set(list(self.dic.keys())) & set(list(other.dic.keys())))
+        for s in lis:
+            count += np.conjugate(self.dic[s]) * other.dic[s]
+        return count 
+
+
     def exp(self, Hf):
         """Return the expectation value Hamiltonian on the current state with Hamiltonian in the form of either
         of.FermionOperator, 1e or 2e tensor, or a tuple of (1e, 2e) tensor
@@ -154,7 +160,10 @@ class sdstate:
         return re_state
         
     def concatenate(self, st):
-#         Return the direct product of two sdstates
+        """
+        Return the direct product of two sdstates.
+        |SD> = |SD> \otimes |st>
+        """
         if len(self.dic) == 0:
             return st
         elif len(st.dic) == 0:
@@ -335,11 +344,6 @@ class sdstate:
             op += of.FermionOperator(tup, coeff)
         return op
 
-    # def create(self, vec):
-    #     """Acting a sum of creation operators on the current state, for vec[i] = v_i
-    #     \sum_p v_p * a_p *
-    #     """
-
     def CR(self, idx, coeff = 1):
         """Acting creation operator a_p* on the current state, return the resulting state"""
         if self.dic == {}:
@@ -369,11 +373,50 @@ class sdstate:
         # Generated the state from Unitarily transformed operators
         return create_sdstate(U_op, n_qubit = self.n_qubit)
 
+    def get_covariance(self, op1, op2):
+        """Return the covariance of operators op1 and op2 on the current state
+        Cov(op1, op2) = <SD|op1op2|SD> - <SD|op1|SD><SD|op2|SD>
+        """
+        exp12 = self @ self.Hf_state(op2).Hf_state(op1)
+        exp1 = self.exp(op1)
+        exp2 = self.exp(op2)
+        return exp12 - exp1*exp2
+
+    def get_cov_cost(self, U = None):
+        """Return the sum of covariance of number operators on the current state
+        """
+        cov = 0
+        for p in range(self.n_qubit):
+            n_p = of.FermionOperator(f"{p}^ {p}")
+            if U is not None:
+                n_p = np.einsum('ak,bl,kl->ab', np.conj(U), U, n_p)
+            # Making use of cov(A,B) = cov(B,A), adding cov(p,q) twice to account for cov(q,p)
+            for q in range(p + 1):
+                if p == q:
+                    coeff = 1
+                else:
+                    coeff = 2
+                n_q = of.FermionOperator(f"{q}^ {q}")
+                if U is not None:
+                    n_q = np.einsum('ak,bl,kl->ab', np.conj(U), U, n_q)
+                cov += coeff * np.linalg.norm(self.get_covariance(n_p, n_q))
+        return cov
+
+    def get_Sz(self):
+        """Return the expectation value of Sz operator"""
+        Sz = of.hamiltonians.sz_operator(self.n_qubit//2)
+        return self.exp(Sz)
+
+    def get_S2(self):
+        """Return the expectation value of S2 operator"""
+        S2 = of.hamiltonians.s_squared_operator(self.n_qubit//2)
+        return self.exp(S2)
 
 def transform_CR(op: of.FermionOperator, U: np.ndarray):
-    """Transform with creation operator the MF unitary rotation U
+    """Transform a series of creation operators with the given MF unitary rotation U
     U @ CR
     CR = \PI_p{a_p*}
+    Given the creation operator op, transform it with the Unitary Rotation U.
     """
     n = U.shape[0]
     op_U = of.FermionOperator.zero()
@@ -381,17 +424,19 @@ def transform_CR(op: of.FermionOperator, U: np.ndarray):
         cur_op = of.FermionOperator.identity()
         lis = [i[0] for i in tup]
         assert not 0 in [i[1] for i in tup], "CR consists of annihilation operator: " + str(of.FermionOperator(tup, val))
+        # lis stores the indexes of creation operators
         for i in lis:
             tmp = np.zeros(n)
+            # Transform the creation operator into vector representation
             tmp[i] = 1
-#             print(tmp)
+            # Transform the creation operator with unitary transformation
             u_tmp = np.einsum('q,qp->p', tmp, U)
-#             print(u_tmp)
+            # Construct the transformed operator for the current index
             tmp_op = vec_to_CR(u_tmp)
-#             Multiply the transfered operator to the current operator to add cur_op
+            # Multiply the transformed operator to the current string operator to add cur_op
             cur_op *= tmp_op
-#         Update the current operator
-        op_U += cur_op *val
+        # Update the current operator, together with the coefficient of the operator
+        op_U += cur_op * val
     return op_U
    
 def vec_to_CR(vec) -> of.FermionOperator:
@@ -407,6 +452,7 @@ def vec_to_CR(vec) -> of.FermionOperator:
 def create_sdstate(CR: of.FermionOperator, n_qubit = None):
     """Return the state created from a linear combination of creation operators strings.
     |SD> = \sum_iP{CR_i}|vacuum>
+    where each CR_i is a string of creation operators
     CR_i = \PI_p{a_p*}
     """
     if not n_qubit:
@@ -441,6 +487,16 @@ def find_1_bits(n: int) -> int:
     return indices
 
 def int_to_str(k, n_qubit):
+    """
+    Convert the binary integar to occupied and virtual orbitals, in reversed order and fill
+    in the extra virtual orbitals
+    >>> int_to_str(1, 2)
+    '10'
+    >>> int_to_str(2, 3)
+    '010'
+    >>> int_to_str(3, 3)
+    '110'    
+    """
     return str(bin(k))[2:][::-1] + "0" * (n_qubit - k.bit_length() - (k == 0)) 
 
 def reverse_bits(number: int, num_bits: int) -> int:
