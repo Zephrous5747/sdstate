@@ -98,7 +98,7 @@ class sdstate:
     
     def __mul__(self, n):
         # Defines constant multiplication
-        result = copy.copy(self)
+        result = copy.deepcopy(self)
         for s in result.dic:
             result.dic[s] *= n
         return result
@@ -262,14 +262,21 @@ class sdstate:
             vec[reverse_bits(i, self.n_qubit)] = self.dic[i]
         return vec
 
-    def get_1RDM(self):
+    def get_1RDM(self, spin_orbs = True):
         """
         Return the 1 electron reduced density matrix P, where
         [P]_pq = <sd|a_p*a_q|sd>
+        spin_orbs indicates if the 1RDM is in spin or spatial orbitals
         """
-        density = np.ndarray((self.n_qubit,self.n_qubit))
-        for p, q in product(range(self.n_qubit), repeat = 2):
-            density[p,q] = self @ (self.Epq(p, q))
+        if spin_orbs:
+            density = np.ndarray((self.n_qubit,self.n_qubit))
+            for p, q in product(range(self.n_qubit), repeat = 2):
+                density[p,q] = self @ (self.Epq(p, q))
+        else:
+            n = self.n_qubit // 2
+            density = np.ndarray((n,n))
+            for p, q in product(range(n), repeat = 2):
+                density[p,q] = self @ (self.Epq(2 * p, 2 * q) + self.Epq(2*p + 1, 2*q + 1))
         return density
 
     def variance(self, op: of.FermionOperator):
@@ -328,10 +335,10 @@ class sdstate:
         """
         S = 0
         for state, coeff in self.dic.items():
-            ck = np.conj(coeff) * coeff
-            if abs(ck) > self.eps:
+            ck = np.real(np.conj(coeff) * coeff)
+            if ck > 0:
                 S -= ck * math.log2(ck)
-        return S
+        return np.real(S)
 
     def get_creation_operators(self):
         """Return the creation operator which creates the current state.
@@ -377,7 +384,21 @@ class sdstate:
         """Return the covariance of operators op1 and op2 on the current state
         Cov(op1, op2) = <SD|op1op2|SD> - <SD|op1|SD><SD|op2|SD>
         """
-        exp12 = self @ self.Hf_state(op2).Hf_state(op1)
+        if isinstance(op2, np.ndarray):
+            tmp = self.tensor_state(op2)
+        elif isinstance(op2, of.FermionOperator):
+            tmp = self.Hf_state(op2)
+        else:
+            print("Invalid input type of op2")
+            return -1
+        if isinstance(op1, np.ndarray):
+            tmp = tmp.tensor_state(op1)
+        elif isinstance(op1, of.FermionOperator):
+            tmp = tmp.Hf_state(op1)
+        else:
+            print("Invalid input type for op1")
+            return -1
+        exp12 = self @ tmp
         exp1 = self.exp(op1)
         exp2 = self.exp(op2)
         return exp12 - exp1*exp2
@@ -389,7 +410,10 @@ class sdstate:
         for p in range(self.n_qubit):
             n_p = of.FermionOperator(f"{p}^ {p}")
             if U is not None:
-                n_p = np.einsum('ak,bl,kl->ab', np.conj(U), U, n_p)
+                n_p_vec = np.zeros((self.n_qubit,self.n_qubit))
+                n_p_vec[p,p] = 1
+                n_p_vec = np.einsum('ak,bl,kl->ab', np.conj(U), U, n_p_vec)
+                n_p = n_p_vec
             # Making use of cov(A,B) = cov(B,A), adding cov(p,q) twice to account for cov(q,p)
             for q in range(p + 1):
                 if p == q:
@@ -398,7 +422,10 @@ class sdstate:
                     coeff = 2
                 n_q = of.FermionOperator(f"{q}^ {q}")
                 if U is not None:
-                    n_q = np.einsum('ak,bl,kl->ab', np.conj(U), U, n_q)
+                    n_q_vec = np.zeros((self.n_qubit,self.n_qubit))
+                    n_q_vec[q,q] = 1
+                    n_q_vec = np.einsum('ak,bl,kl->ab', np.conj(U), U, n_q_vec)
+                    n_q = n_q_vec
                 cov += coeff * np.linalg.norm(self.get_covariance(n_p, n_q))
         return cov
 
@@ -411,6 +438,32 @@ class sdstate:
         """Return the expectation value of S2 operator"""
         S2 = of.hamiltonians.s_squared_operator(self.n_qubit//2)
         return self.exp(S2)
+
+    def get_SD_num_p(self, p: float):
+        """
+        Return the minimum number of Slater Determinants which would sum to a
+        total probability of p. Assuming the current state is normalized.
+        """
+        assert 0 < p <= 1, "Invalid input of probability"
+        self.normalize()
+        num = 0
+        lis = [np.real(i[1] * np.conj(i[1])) for i in self.dic.items()]
+        lis.sort(reverse = True)
+        tmp = 0
+        while tmp < p:
+            tmp += lis[num]
+            num += 1
+        return num
+
+    def get_prob_SD(self, n: int):
+        """
+        Return the sum of probability for the leading n Slater Determinants. Assuming
+        the current state is normalized.
+        """
+        self.normalize()
+        lis = [np.real(i[1] * np.conj(i[1])) for i in self.dic.items()]
+        lis.sort(reverse = True)
+        return sum(lis[:n])
 
 def transform_CR(op: of.FermionOperator, U: np.ndarray):
     """Transform a series of creation operators with the given MF unitary rotation U
