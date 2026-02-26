@@ -268,9 +268,9 @@ class sdstate:
         Norbs = sd.n_qubit
         ret = sdstate(n_qubit = Norbs)
         for p in op.terms.keys():
-        coef = op.terms[p]
+            coef = op.terms[p]
         for s in sd.dic:
-          ret += P_state(s, p, Norbs) * sd.dic[s] * coef
+            ret += P_state(s, p, Norbs) * sd.dic[s] * coef
         return ret
 
 
@@ -605,59 +605,3 @@ def actable_pq(n: int, p: int, q: int):
     Determines if a_p^a_q annihilates the current state given by n, for n as an index in fock space
     """
     return (p == q and (n & 1 << q) != 0) or ((n & 1 << p) == 0 and (n & 1 << q) != 0)
-
-
-
-def P_state(s, op, n):
-    """
-    Apply a product of Pauli operators (specified in 'op')
-    to the Slater-determinant-like integer 's' (bitstring encoding).
-
-    - s:  an integer whose bits represent which qubits are occupied.
-    - op: a list or tuple of (index, 'X'/'Y'/'Z') specifying the Pauli operators
-          and on which qubit index they act.
-    - n:  the total number of qubits/modes (for constructing sdstate).
-
-    Returns:
-      sdstate(s_final, coeff=phase, n_qubit=n)
-      capturing the transformed bitstring and overall phase.
-    """
-
-    # Start with no phase shift
-    phase = 1  # a complex number, needed for 'Y' phases
-
-    # If no operators, just return the original state with coeff=1
-    if len(op) == 0:
-        return sdstate(s, coeff=phase, n_qubit=n)
-
-    # Apply each Pauli operator in sequence
-    for (k, pauli_char) in op[::-1]:
-        idx = k
-        # Extract the bit at position idx
-        bit = (s >> idx) & 1
-
-        if pauli_char == 'Z':
-            # Multiply phase by (-1) if that qubit is occupied
-            # (Z|1> = -|1>, Z|0> = +|0>)
-            if bit == 1:
-                phase *= -1
-
-        elif pauli_char == 'X':
-            # Flip the bit at idx
-            s ^= (1 << idx)
-
-        elif pauli_char == 'Y':
-            # Y acts like i * XZ on a single qubit
-            # If bit=0 => pick up +i, flip bit to 1
-            # If bit=1 => pick up -i, flip bit to 0
-            if bit == 0:
-                phase *= 0+1j  # multiply by +i
-            else:
-                phase *= 0-1j  # multiply by -i
-            # Then flip the bit
-            s ^= (1 << idx)
-
-        else:
-            raise ValueError(f"Invalid Pauli operator: {pauli_char}")
-    # Return the new Slater-determinant state object with the final bitstring + phase
-    return sdstate(s, coeff=phase, n_qubit=n)

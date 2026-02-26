@@ -25,11 +25,7 @@ def apply_pauli_string(state, pauli_string: tuple, term_coeff: complex):
         
     Returns:
         A new sdstate instance representing the resulting state vector.
-    """
-    # Assuming sdstate is defined in a module named sdstate_module
-    # Adjust the import path according to your project structure
-    from sdstate_module import sdstate 
-    
+    """    
     # Initialize a new state to store the result of the operator application
     out_state = sdstate(n_qubit=state.n_qubit)
     
